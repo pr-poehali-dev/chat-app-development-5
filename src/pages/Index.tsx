@@ -13,14 +13,19 @@ interface Chat {
   time: string;
   unread: number;
   online: boolean;
+  isGroup?: boolean;
+  members?: number;
 }
 
 interface Message {
   id: number;
-  text: string;
+  text?: string;
   time: string;
   isOwn: boolean;
   reactions?: string[];
+  type?: 'text' | 'voice';
+  voiceDuration?: number;
+  author?: string;
 }
 
 interface Story {
@@ -32,10 +37,10 @@ interface Story {
 
 const chats: Chat[] = [
   { id: 1, name: 'Анна Петрова', avatar: '👩', lastMessage: 'Окей, встречаемся завтра!', time: '14:23', unread: 2, online: true },
-  { id: 2, name: 'Команда Проекта', avatar: '👥', lastMessage: 'Михаил: Отлично, утверждаем', time: '13:45', unread: 5, online: false },
+  { id: 2, name: 'Команда Проекта', avatar: '👥', lastMessage: 'Михаил: Отлично, утверждаем', time: '13:45', unread: 5, online: false, isGroup: true, members: 8 },
   { id: 3, name: 'Максим Иванов', avatar: '👨', lastMessage: 'Посмотри эту статью', time: '12:10', unread: 0, online: true },
   { id: 4, name: 'Мама ❤️', avatar: '👩‍🦰', lastMessage: 'Как дела?', time: 'Вчера', unread: 0, online: false },
-  { id: 5, name: 'Фитнес Клуб', avatar: '💪', lastMessage: 'Напоминание о тренировке', time: 'Вчера', unread: 1, online: false },
+  { id: 5, name: 'Фитнес Клуб', avatar: '💪', lastMessage: 'Напоминание о тренировке', time: 'Вчера', unread: 1, online: false, isGroup: true, members: 245 },
 ];
 
 const stories: Story[] = [
@@ -47,10 +52,10 @@ const stories: Story[] = [
 ];
 
 const mockMessages: Message[] = [
-  { id: 1, text: 'Привет! Как дела?', time: '14:20', isOwn: false },
-  { id: 2, text: 'Отлично! Спасибо 😊', time: '14:21', isOwn: true },
-  { id: 3, text: 'Завтра встречаемся в 15:00?', time: '14:22', isOwn: false },
-  { id: 4, text: 'Окей, встречаемся завтра!', time: '14:23', isOwn: true, reactions: ['❤️', '👍'] },
+  { id: 1, text: 'Привет! Как дела?', time: '14:20', isOwn: false, type: 'text' },
+  { id: 2, text: 'Отлично! Спасибо 😊', time: '14:21', isOwn: true, type: 'text' },
+  { id: 3, type: 'voice', voiceDuration: 8, time: '14:22', isOwn: false },
+  { id: 4, text: 'Окей, встречаемся завтра!', time: '14:23', isOwn: true, reactions: ['❤️', '👍'], type: 'text' },
 ];
 
 export default function Index() {
@@ -59,6 +64,9 @@ export default function Index() {
   const [messages, setMessages] = useState<Message[]>(mockMessages);
   const [messageText, setMessageText] = useState('');
   const [showReactions, setShowReactions] = useState<number | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [playingVoice, setPlayingVoice] = useState<number | null>(null);
 
   const reactions = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
 
@@ -70,10 +78,44 @@ export default function Index() {
       text: messageText,
       time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
       isOwn: true,
+      type: 'text',
+      author: selectedChat?.isGroup ? 'Вы' : undefined,
     };
     
     setMessages([...messages, newMessage]);
     setMessageText('');
+  };
+
+  const startRecording = () => {
+    setIsRecording(true);
+    setRecordingTime(0);
+    const interval = setInterval(() => {
+      setRecordingTime(prev => prev + 1);
+    }, 1000);
+    (window as any).recordingInterval = interval;
+  };
+
+  const stopRecording = () => {
+    setIsRecording(false);
+    clearInterval((window as any).recordingInterval);
+    
+    const voiceMessage: Message = {
+      id: messages.length + 1,
+      type: 'voice',
+      voiceDuration: recordingTime,
+      time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      isOwn: true,
+      author: selectedChat?.isGroup ? 'Вы' : undefined,
+    };
+    
+    setMessages([...messages, voiceMessage]);
+    setRecordingTime(0);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const addReaction = (messageId: number, emoji: string) => {
@@ -111,7 +153,12 @@ export default function Index() {
               </Avatar>
               <div className="flex-1">
                 <h2 className="font-semibold text-gray-900">{selectedChat.name}</h2>
-                <p className="text-xs text-purple-600">{selectedChat.online ? '🟢 онлайн' : 'был(а) недавно'}</p>
+                <p className="text-xs text-purple-600">
+                  {selectedChat.isGroup 
+                    ? `${selectedChat.members} участников` 
+                    : selectedChat.online ? '🟢 онлайн' : 'был(а) недавно'
+                  }
+                </p>
               </div>
               <Button variant="ghost" size="icon" className="hover:bg-purple-100">
                 <Icon name="Phone" size={20} />
@@ -144,7 +191,39 @@ export default function Index() {
                         if (showReactions === msg.id) setShowReactions(null);
                       }}
                     >
-                      <p className="text-sm">{msg.text}</p>
+                      {selectedChat?.isGroup && !msg.isOwn && msg.author && (
+                        <p className="text-xs font-semibold mb-1 text-purple-300">{msg.author}</p>
+                      )}
+                      
+                      {msg.type === 'voice' ? (
+                        <div className="flex items-center gap-2 min-w-[160px]">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className={`h-8 w-8 rounded-full ${msg.isOwn ? 'hover:bg-white/20' : 'hover:bg-purple-100'}`}
+                            onClick={() => setPlayingVoice(playingVoice === msg.id ? null : msg.id)}
+                          >
+                            <Icon name={playingVoice === msg.id ? 'Pause' : 'Play'} size={16} />
+                          </Button>
+                          <div className="flex-1 flex items-center gap-2">
+                            <div className="flex gap-0.5 items-center flex-1">
+                              {[...Array(20)].map((_, i) => (
+                                <div
+                                  key={i}
+                                  className={`w-0.5 rounded-full ${msg.isOwn ? 'bg-white/50' : 'bg-purple-300'} ${
+                                    playingVoice === msg.id && i < 10 ? 'animate-pulse' : ''
+                                  }`}
+                                  style={{ height: `${Math.random() * 16 + 8}px` }}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-xs">{formatTime(msg.voiceDuration || 0)}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm">{msg.text}</p>
+                      )}
+                      
                       <span className={`text-xs ${msg.isOwn ? 'text-purple-100' : 'text-gray-500'} block mt-1`}>
                         {msg.time}
                       </span>
@@ -178,24 +257,72 @@ export default function Index() {
           </ScrollArea>
 
           <div className="p-4 bg-white/80 backdrop-blur-lg border-t border-purple-100">
-            <div className="flex gap-2 max-w-2xl mx-auto">
-              <Button variant="ghost" size="icon" className="hover:bg-purple-100">
-                <Icon name="Paperclip" size={20} />
-              </Button>
-              <Input
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                placeholder="Сообщение..."
-                className="flex-1 rounded-full border-purple-200 focus-visible:ring-purple-400"
-              />
-              <Button 
-                onClick={sendMessage}
-                className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-              >
-                <Icon name="Send" size={20} />
-              </Button>
-            </div>
+            {isRecording ? (
+              <div className="flex items-center gap-3 max-w-2xl mx-auto animate-fade-in">
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={stopRecording}
+                  className="hover:bg-red-100"
+                >
+                  <Icon name="X" size={20} className="text-red-500" />
+                </Button>
+                <div className="flex-1 flex items-center gap-3 bg-red-50 rounded-full px-4 py-2">
+                  <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                  <span className="text-red-600 font-semibold">{formatTime(recordingTime)}</span>
+                  <div className="flex gap-1 flex-1">
+                    {[...Array(30)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-1 bg-red-300 rounded-full animate-pulse"
+                        style={{ 
+                          height: `${Math.random() * 20 + 10}px`,
+                          animationDelay: `${i * 0.05}s`
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <Button 
+                  onClick={stopRecording}
+                  className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                >
+                  <Icon name="Send" size={20} />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2 max-w-2xl mx-auto">
+                <Button variant="ghost" size="icon" className="hover:bg-purple-100">
+                  <Icon name="Paperclip" size={20} />
+                </Button>
+                <Input
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  placeholder="Сообщение..."
+                  className="flex-1 rounded-full border-purple-200 focus-visible:ring-purple-400"
+                />
+                {messageText.trim() ? (
+                  <Button 
+                    onClick={sendMessage}
+                    className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                  >
+                    <Icon name="Send" size={20} />
+                  </Button>
+                ) : (
+                  <Button 
+                    onMouseDown={startRecording}
+                    onMouseUp={stopRecording}
+                    onMouseLeave={() => isRecording && stopRecording()}
+                    onTouchStart={startRecording}
+                    onTouchEnd={stopRecording}
+                    className="rounded-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                  >
+                    <Icon name="Mic" size={20} />
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -241,8 +368,13 @@ export default function Index() {
                       <Avatar className="h-12 w-12">
                         <AvatarFallback className="text-xl">{chat.avatar}</AvatarFallback>
                       </Avatar>
-                      {chat.online && (
+                      {chat.online && !chat.isGroup && (
                         <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                      )}
+                      {chat.isGroup && (
+                        <div className="absolute -bottom-1 -right-1 bg-purple-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-semibold">
+                          {chat.members && chat.members > 99 ? '99+' : chat.members}
+                        </div>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
